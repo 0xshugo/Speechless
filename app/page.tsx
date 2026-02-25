@@ -1,66 +1,124 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { useState, FormEvent, ChangeEvent } from "react";
+import s from "./page.module.css";
 
 export default function Home() {
+  const [image, setImage] = useState<string>("");
+  const [preview, setPreview] = useState<string>("");
+  const [text, setText] = useState("");
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setPreview(dataUrl);
+      // Strip data URI prefix → pure base64
+      setImage(dataUrl.replace(/^data:image\/[^;]+;base64,/, ""));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setResult("");
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/process-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || `Error ${res.status}`);
+      } else {
+        setResult(data.result);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const endpoint = typeof window !== "undefined" ? window.location.origin : "";
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className={s.page}>
+      <header className={s.header}>
+        <h1 className={s.title}>Speechless</h1>
+        <p className={s.subtitle}>Vision Context BFF — Test Console</p>
+      </header>
+
+      <form className={s.card} onSubmit={handleSubmit}>
+        <div className={s.field}>
+          <label className={s.label}>Screenshot (image)</label>
+          <input
+            className={s.fileInput}
+            type="file"
+            accept="image/*"
+            onChange={handleFile}
+          />
+          {preview && (
+            <img src={preview} alt="preview" className={s.preview} />
+          )}
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className={s.field}>
+          <label className={s.label}>Voice Input (text)</label>
+          <textarea
+            className={s.textarea}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="例: これを英語に翻訳して"
+          />
         </div>
-      </main>
+
+        <button
+          className={s.button}
+          type="submit"
+          disabled={loading || !image || !text}
+        >
+          {loading ? "Processing..." : "Send"}
+        </button>
+
+        {result && (
+          <div className={s.resultBox}>
+            <div className={s.resultLabel}>Result</div>
+            <div className={s.resultText}>{result}</div>
+          </div>
+        )}
+
+        {error && (
+          <div className={s.resultBox}>
+            <div className={`${s.resultLabel} ${s.errorText}`}>Error</div>
+            <div className={`${s.resultText} ${s.errorText}`}>{error}</div>
+          </div>
+        )}
+      </form>
+
+      <div className={s.endpoint}>
+        <h2 className={s.endpointTitle}>API Endpoint</h2>
+        <div className={s.codeBlock}>
+{`POST ${endpoint}/api/process-context
+Content-Type: application/json
+
+{
+  "image": "<base64 encoded image>",
+  "text": "ユーザーの発話テキスト"
+}
+
+→ { "result": "生成されたテキスト" }`}
+        </div>
+      </div>
     </div>
   );
 }

@@ -31,6 +31,8 @@ function normalizeBase64(input: string): string {
   return match ? match[1] : input;
 }
 
+export const maxDuration = 30;
+
 export async function POST(request: NextRequest) {
   try {
     // Validate API key
@@ -83,6 +85,7 @@ export async function POST(request: NextRequest) {
               type: "image_url",
               image_url: {
                 url: `data:image/png;base64,${base64Image}`,
+                detail: "low",
               },
             },
           ],

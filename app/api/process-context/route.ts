@@ -8,11 +8,6 @@ interface PromptConfig {
   system_prompt: string;
 }
 
-interface RequestBody {
-  image: string;
-  text: string;
-}
-
 function loadSystemPrompt(): string {
   const filePath = path.join(process.cwd(), "config", "prompt.yaml");
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -26,16 +21,49 @@ function loadSystemPrompt(): string {
 }
 
 function normalizeBase64(input: string): string {
-  // Strip data URI prefix if present (e.g. "data:image/png;base64,...")
   const match = input.match(/^data:image\/[^;]+;base64,(.+)$/);
   return match ? match[1] : input;
+}
+
+async function parseRequest(
+  request: NextRequest
+): Promise<{ image: string; text: string }> {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  // Handle multipart/form-data (Apple Shortcuts)
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const imageField = formData.get("image");
+    const text = formData.get("text") as string | null;
+
+    let image = "";
+    if (imageField instanceof File) {
+      const buffer = Buffer.from(await imageField.arrayBuffer());
+      image = buffer.toString("base64");
+    } else if (typeof imageField === "string") {
+      image = imageField;
+    }
+
+    return { image, text: text ?? "" };
+  }
+
+  // Handle application/x-www-form-urlencoded (Shortcuts "Form" mode)
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const formData = await request.formData();
+    const image = (formData.get("image") as string) ?? "";
+    const text = (formData.get("text") as string) ?? "";
+    return { image, text };
+  }
+
+  // Handle application/json (default)
+  const body = await request.json();
+  return { image: body.image ?? "", text: body.text ?? "" };
 }
 
 export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate API key
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OPENAI_API_KEY is not configured" },
@@ -43,7 +71,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Load system prompt from YAML
     let systemPrompt: string;
     try {
       systemPrompt = loadSystemPrompt();
@@ -55,19 +82,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    const body: RequestBody = await request.json();
+    const { image, text } = await parseRequest(request);
 
-    if (!body.image || !body.text) {
+    if (!image || !text) {
       return NextResponse.json(
         { error: "Both 'image' and 'text' fields are required" },
         { status: 400 }
       );
     }
 
-    const base64Image = normalizeBase64(body.image);
+    const base64Image = normalizeBase64(image);
 
-    // Call OpenAI API
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
@@ -80,11 +105,11 @@ export async function POST(request: NextRequest) {
         {
           role: "user",
           content: [
-            { type: "text", text: body.text },
+            { type: "text", text },
             {
               type: "image_url",
               image_url: {
-                url: `data:image/png;base64,${base64Image}`,
+                url: `data:image/jpeg;base64,${base64Image}`,
                 detail: "low",
               },
             },
